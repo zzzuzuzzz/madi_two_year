@@ -7,9 +7,7 @@
 <script>
 export default {
   props: {
-    counter: {
-      type: Number
-    }
+    counter: Number
   }
 };
 </script>
