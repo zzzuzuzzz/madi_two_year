@@ -36,3 +36,5 @@ export default {
   }
 }
 </script>
+
+<style src="../styles/TableComponent.css" scoped></style>

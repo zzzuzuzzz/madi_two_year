@@ -7,145 +7,143 @@
           type="text"
           v-model="inputText"
           placeholder="Введите или выберите элементы"
-          @paste.prevent
+          @input="handleInput"
+          @paste="handlePaste"
       />
 
-      <button @click="showDictionary = true">
-        <!-- Здесь можно использовать иконку, например, Font Awesome -->
-        Словарь
-      </button>
+      <button @click="showDictionary = true">Словарь</button>
 
       <ul>
         <li
             v-for="element in elements"
             :key="element.id"
             @click="toggleSelection(element.id)"
-            :class="{ selected: isSelected(element.id) }"
+            :class="{ selected: selectedElements.includes(element.id) }"
         >
           {{ element.name }} ({{ element.id }})
         </li>
       </ul>
 
-      <button @click="closePopup">Закрыть</button>
+      <div class="buttonGroup">
+        <button @click="$emit('close')">Закрыть</button>
+        <button @click="clear">Отчистить</button>
+      </div>
 
-      <DictionaryPopup v-if="showDictionary" :elements="elements" @close="showDictionary = false"/>
+      <DictionaryPopup 
+        v-if="showDictionary" 
+        :elements="elements" 
+        @close="showDictionary = false"
+      />
     </div>
   </div>
 </template>
 
-<script setup>
-import { defineProps, defineEmits, ref, computed, watch } from 'vue';
-import DictionaryPopup from './DictionaryPopup.vue'; // Импортируйте компонент словаря
+<script>
+import DictionaryPopup from './DictionaryPopup.vue';
 
-const props = defineProps({
-  elements: {
-    type: Array,
-    required: true,
+export default {
+  name: 'MyPopup',
+  components: { DictionaryPopup },
+  
+  props: {
+    elements: { type: Array, required: true },
+    modelValue: { 
+      type: Object,
+      default: () => ({ text: '', selected: [] })
+    }
   },
-  modelValue: {
-    type: Object,
-    default: () => ({ text: '', selected: [] })
-  }
-});
+  
+  data() {
+    return {
+      inputText: this.modelValue.text,
+      selectedElements: this.modelValue.selected,
+      previousValidText: this.modelValue.text,
+      showDictionary: false
+    };
+  },
+  
+  watch: {
+    selectedElements: {
+      handler(newSelected) {
+        this.$emit('update:modelValue', { 
+          text: this.inputText, 
+          selected: newSelected 
+        });
+      }
+    }
+  },
+  
+  methods: {
+    clear() {
+      this.selectedElements = [];
+      this.inputText = '';
+    },
 
-const emit = defineEmits(['update:modelValue', 'close']);
-
-const inputText = ref(props.modelValue.text);
-const selectedElements = ref(props.modelValue.selected);
-
-// Валидация введенного текста
-const validateInput = (text) => {
-  const validIds = props.elements.map(el => el.id);
-  for (const char of text) {
-    if (!validIds.includes(char)) { // Валидируем уже в верхнем регистре
-      return false; // Недопустимый символ
+    handleInput(event) {
+      const newText = event.target.value.toUpperCase();
+      const validIds = this.elements.map(el => el.id);
+      
+      // Проверка валидности ввода
+      const uniqueChars = new Set(newText);
+      const isValid = Array.from(uniqueChars).every(char => validIds.includes(char)) && uniqueChars.size === newText.length;
+      
+      if (isValid) {
+        this.previousValidText = newText;
+        this.inputText = newText;
+        this.selectedElements = Array.from(uniqueChars);
+        this.emitUpdate();
+      } else {
+        this.inputText = this.previousValidText;
+      }
+    },
+    
+    handlePaste(event) {
+      const pastedText = event.clipboardData.getData('text');
+      
+      if (!pastedText) return;
+      
+      const validIds = this.elements.map(el => el.id);
+      const currentChars = new Set(this.previousValidText);
+      const validNewChars = [];
+      
+      // Фильтрация нового текста
+      for (const char of pastedText.toUpperCase()) {
+        if (validIds.includes(char) && !currentChars.has(char) && !validNewChars.includes(char)) {
+          validNewChars.push(char);
+          currentChars.add(char);
+        }
+      }
+      
+      if (validNewChars.length) {
+        this.inputText = this.previousValidText + validNewChars.join('');
+        this.previousValidText = this.inputText;
+        this.selectedElements = Array.from(currentChars);
+        this.emitUpdate();
+      }
+    },
+    
+    toggleSelection(id) {
+      const index = this.selectedElements.indexOf(id);
+      
+      if (index >= 0) {
+        this.selectedElements.splice(index, 1);
+      } else {
+        this.selectedElements.push(id);
+      }
+      
+      this.inputText = this.selectedElements.join('');
+      this.previousValidText = this.inputText;
+      this.emitUpdate();
+    },
+    
+    emitUpdate() {
+      this.$emit('update:modelValue', { 
+        text: this.inputText, 
+        selected: this.selectedElements 
+      });
     }
   }
-  return true;
-};
-
-watch(inputText, (newText) => {
-  const upperCaseText = newText.toUpperCase(); // Приводим к верхнему регистру
-
-  if (!validateInput(upperCaseText)) {
-    inputText.value = inputText.value.slice(0, -1); // Удаляем последний символ из исходного ввода
-    return;
-  }
-
-  selectedElements.value = upperCaseText.split('').filter(id => {
-    return props.elements.some(el => el.id === id);
-  });
-
-  // Обновляем inputText, чтобы он всегда был в верхнем регистре
-  inputText.value = upperCaseText;
-});
-
-watch(selectedElements, (newSelected) => {
-  emit('update:modelValue', { text: inputText.value, selected: newSelected });
-});
-
-watch(inputText, (newText) => {
-  emit('update:modelValue', { text: newText, selected: selectedElements.value });
-});
-
-const isSelected = (id) => {
-  return selectedElements.value.includes(id);
-};
-
-const toggleSelection = (id) => {
-  if (isSelected(id)) {
-    selectedElements.value = selectedElements.value.filter((el) => el !== id);
-  } else {
-    selectedElements.value.push(id);
-  }
-
-  // Обновляем inputText при изменении выбранных элементов
-  inputText.value = selectedElements.value.join('');
-};
-
-const showDictionary = ref(false);
-
-const closePopup = () => {
-  emit('close');
 };
 </script>
 
-<style scoped>
-.popup {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background-color: rgba(0, 0, 0, 0.5);
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  z-index: 1000;
-}
-
-.popup-content {
-  background-color: white;
-  padding: 20px;
-  border-radius: 5px;
-  position: relative; /* Чтобы позиционировать кнопку относительно этого контейнера */
-}
-
-.popup-content button {
-  margin-top: 10px;
-}
-
-ul {
-  list-style: none;
-  padding: 0;
-}
-
-li {
-  padding: 5px;
-  cursor: pointer;
-}
-
-li.selected {
-  background-color: lightblue;
-}
-</style>
+<style src="../styles/MyPopup.css" scoped></style>

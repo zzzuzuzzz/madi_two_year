@@ -1,126 +1,156 @@
 <template>
-  <div>
+  <div class="card">
     <h1>Выбор элементов</h1>
-    <input type="file" @change="handleFileChange" accept=".json, .xml"/>
+    <input id="inp" type="file" @change="handleFileChange" accept=".json, .xml"/>
 
-    <button @click="showPopup1 = true" :disabled="!elements.length">Открыть Попап 1</button>
-    <my-popup
+    <button @click="openPopup1" :disabled="!elements.length">Открыть Попап 1</button>
+    <MyPopup
         v-if="showPopup1"
         :elements="elements"
         v-model="popup1Value"
-        @close="showPopup1 = false"
+        @close="closePopup1"
     />
     <p v-if="popup1Value.text">Попап 1: {{ selectedElementTexts1.join(', ') }}</p>
 
-    <button @click="showPopup2 = true" :disabled="!elements.length">Открыть Попап 2</button>
-    <my-popup
+    <button @click="openPopup2" :disabled="!elements.length">Открыть Попап 2</button>
+    <MyPopup
         v-if="showPopup2"
         :elements="elements"
         v-model="popup2Value"
-        @close="showPopup2 = false"
+        @close="closePopup2"
     />
     <p v-if="popup2Value.text">Попап 2: {{ selectedElementTexts2.join(', ') }}</p>
 
     <h2 v-if="intersection.length">Пересечение:</h2>
     <p v-if="intersection.length">{{ intersectionTexts.join(', ') }}</p>
+    <button @click="clear" :disabled="!elements.length">Отчистить</button>
+
   </div>
 </template>
 
-<script setup>
-import { ref, computed, onMounted } from 'vue';
+<script>
 import MyPopup from './components/MyPopup.vue';
 
-const elements = ref([]);
-const showPopup1 = ref(false);
-const showPopup2 = ref(false);
-
-// Используем ref для popup1Value и popup2Value, чтобы хранить данные для каждого попапа
-const popup1Value = ref({ text: '', selected: [] });
-const popup2Value = ref({ text: '', selected: [] });
-
-
-const handleFileChange = (event) => {
-  const file = event.target.files[0];
-  if (file) {
-    // Сбрасываем все значения
-    popup1Value.value = { text: '', selected: [] };
-    popup2Value.value = { text: '', selected: [] };
-    elements.value = []; // Сбрасываем elements до разбора нового файла
-
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const fileContent = e.target.result;
-      parseFile(file, fileContent);
+export default {
+  components: {
+    MyPopup
+  },
+  
+  data() {
+    return {
+      elements: [],
+      showPopup1: false,
+      showPopup2: false,
+      popup1Value: { text: '', selected: [] },
+      popup2Value: { text: '', selected: [] }
     };
-    reader.readAsText(file);
+  },
+  
+  computed: {
+    selectedElementTexts1() {
+      return this.popup1Value.selected.map(id => {
+        const element = this.elements.find(el => el.id === id);
+        return element ? element.name : '';
+      });
+    },
+    
+    selectedElementTexts2() {
+      return this.popup2Value.selected.map(id => {
+        const element = this.elements.find(el => el.id === id);
+        return element ? element.name : '';
+      });
+    },
+    
+    intersection() {
+      return this.popup1Value.selected.filter(id => this.popup2Value.selected.includes(id));
+    },
+    
+    intersectionTexts() {
+      return this.intersection.map(id => {
+        const element = this.elements.find(el => el.id === id);
+        return element ? element.name : '';
+      });
+    }
+  },
+  
+  methods: {
+    openPopup1() {
+      this.showPopup1 = true;
+    },
+    
+    closePopup1() {
+      this.showPopup1 = false;
+    },
+    
+    openPopup2() {
+      this.showPopup2 = true;
+    },
+    
+    closePopup2() {
+      this.showPopup2 = false;
+    },
+    
+    handleFileChange(event) {
+      const file = event.target.files[0];
+      if (file) {
+        this.popup1Value = { text: '', selected: [] };
+        this.popup2Value = { text: '', selected: [] };
+        this.elements = []; // Сбрасываем elements до разбора нового файла
+
+        const reader = new FileReader();
+        reader.addEventListener('load', (e) => this.fileReaderOnload(file, e));
+        reader.readAsText(file);
+      }
+    },
+    
+    fileReaderOnload(file, e) {
+      const fileContent = e.target.result;
+      this.parseFile(file, fileContent);
+    },
+    
+    parseFile(file, fileContent) {
+      try {
+        if (file.name.endsWith('.json')) {
+          this.elements = JSON.parse(fileContent);
+        } else if (file.name.endsWith('.xml')) {
+          this.elements = this.parseXml(fileContent);
+        } else {
+          console.error('Неподдерживаемый формат файла');
+          this.elements = [];
+          return;
+        }
+      } catch (error) {
+        console.error('Ошибка при разборе файла:', error);
+        this.elements = [];
+      }
+    },
+    
+    parseXml(xmlString) {
+      const parser = new DOMParser();
+      const xmlDoc = parser.parseFromString(xmlString, "text/xml");
+
+      const items = xmlDoc.querySelectorAll('item');
+      const result = [];
+
+      items.forEach(item => {
+        const id = item.getAttribute('id');  // Извлекаем id из атрибута
+        const name = item.textContent;       // Извлекаем имя из содержимого элемента
+        if (id && name) {
+          result.push({ id, name });
+        }
+      });
+
+      return result;
+    },
+    
+    clear() {
+      this.popup1Value = { text: '', selected: [] };
+      this.popup2Value = { text: '', selected: [] };
+      this.elements = [];
+      document.getElementById('inp').value = null;
+    }
   }
 };
-
-
-const parseFile = (file, fileContent) => {
-  try {
-    if (file.name.endsWith('.json')) {
-      elements.value = JSON.parse(fileContent);
-    } else if (file.name.endsWith('.xml')) {
-      elements.value = parseXml(fileContent);
-    } else {
-      console.error('Неподдерживаемый формат файла');
-      elements.value = [];
-      return;
-    }
-  } catch (error) {
-    console.error('Ошибка при разборе файла:', error);
-    elements.value = [];
-  }
-};
-
-
-function parseXml(xmlString) {
-  const parser = new DOMParser();
-  const xmlDoc = parser.parseFromString(xmlString, "text/xml");
-
-  const items = xmlDoc.querySelectorAll('item');
-  const result = [];
-
-  items.forEach(item => {
-    const id = item.getAttribute('id');  // Извлекаем id из атрибута
-    const name = item.textContent;       // Извлекаем имя из содержимого элемента
-    if (id && name) {
-      result.push({ id, name });
-    }
-  });
-
-  return result;
-}
-
-
-const selectedElementTexts1 = computed(() => {
-  return popup1Value.value.selected.map(id => {
-    const element = elements.value.find(el => el.id === id);
-    return element ? element.name : '';
-  });
-});
-
-const selectedElementTexts2 = computed(() => {
-  return popup2Value.value.selected.map(id => {
-    const element = elements.value.find(el => el.id === id);
-    return element ? element.name : '';
-  });
-});
-
-const intersection = computed(() => {
-  return popup1Value.value.selected.filter(id => popup2Value.value.selected.includes(id));
-});
-
-const intersectionTexts = computed(() => {
-  return intersection.value.map(id => {
-    const element = elements.value.find(el => el.id === id);
-    return element ? element.name : '';
-  });
-});
-
 </script>
 
-<style scoped>
-/* Стилизуйте компоненты по своему вкусу */
-</style>
+<style src="./styles/App.css" scoped></style>
